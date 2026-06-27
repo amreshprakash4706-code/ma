@@ -1,0 +1,241 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // For local development with Docker, use the docker-compose postgres
+  // For production, use your managed Postgres (Supabase, Neon, Railway, etc.)
+}
+
+enum Role {
+  USER
+  AGENT
+  ADMIN
+}
+
+enum PropertyType {
+  HOUSE
+  APARTMENT
+  CONDO
+  TOWNHOUSE
+  LAND
+  COMMERCIAL
+}
+
+enum PropertyStatus {
+  AVAILABLE
+  PENDING
+  SOLD
+  RENTED
+}
+
+enum VisitStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String?
+  name          String
+  avatar        String?
+  phone         String?
+  role          Role      @default(USER)
+  isVerified    Boolean   @default(false)
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  properties    Property[] @relation("AgentProperties")
+  favorites     Favorite[]
+  visits        Visit[]    @relation("UserVisits")
+  sentMessages  Message[]  @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+  reviews       Review[]
+  notifications Notification[]
+  blogPosts     BlogPost[] @relation("AuthorPosts")
+  valuations    Valuation[]
+
+  accounts      Account[] // For OAuth
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Property {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @db.Text
+  price       Float
+  location    String
+  address     String
+  city        String
+  state       String
+  zipCode     String
+  lat         Float?
+  lng         Float?
+  bedrooms    Int
+  bathrooms   Float
+  sqft        Int
+  type        PropertyType
+  status      PropertyStatus @default(AVAILABLE)
+  images      String[] // Cloudinary URLs
+  features    String[] // e.g. ["pool", "garage", "gym"]
+  agentId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  agent       User      @relation("AgentProperties", fields: [agentId], references: [id])
+  favorites   Favorite[]
+  visits      Visit[]
+  reviews     Review[]
+  valuations  Valuation[]
+}
+
+model Favorite {
+  id         String   @id @default(cuid())
+  userId     String
+  propertyId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+}
+
+model Visit {
+  id          String      @id @default(cuid())
+  userId      String
+  propertyId  String
+  scheduledAt DateTime
+  status      VisitStatus @default(PENDING)
+  notes       String?     @db.Text
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user     User     @relation("UserVisits", fields: [userId], references: [id])
+  property Property @relation(fields: [propertyId], references: [id])
+
+  @@index([scheduledAt])
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String   @db.Text
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  sender   User @relation("SentMessages", fields: [senderId], references: [id])
+  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id])
+
+  @@index([senderId, receiverId])
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  userId     String
+  propertyId String
+  rating     Int      // 1-5
+  comment    String   @db.Text
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id])
+  property Property @relation(fields: [propertyId], references: [id])
+
+  @@unique([userId, propertyId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String   @db.Text
+  type      String   // e.g. "visit", "message", "valuation"
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model BlogPost {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  content     String   @db.Text
+  excerpt     String
+  coverImage  String?
+  authorId    String
+  published   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  author User @relation("AuthorPosts", fields: [authorId], references: [id])
+}
+
+model Valuation {
+  id            String   @id @default(cuid())
+  userId        String?
+  propertyId    String?
+  address       String
+  estimatedValue Float
+  confidence    Float    // 0-1
+  factors       Json     // AI analysis factors
+  aiSummary     String   @db.Text
+  createdAt     DateTime @default(now())
+
+  user     User?     @relation(fields: [userId], references: [id])
+  property Property? @relation(fields: [propertyId], references: [id])
+}
+
+model MortgageCalculation {
+  id            String   @id @default(cuid())
+  userId        String?
+  propertyPrice Float
+  downPayment   Float
+  interestRate  Float
+  loanTerm      Int
+  monthlyPayment Float
+  totalPayment  Float
+  totalInterest Float
+  createdAt     DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+}
+
+// For future analytics
+model AnalyticsEvent {
+  id        String   @id @default(cuid())
+  event     String
+  userId    String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
